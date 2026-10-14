@@ -1,0 +1,71 @@
+<?php
+declare(strict_types=1);
+function bank_is_configured(array $config): bool {
+    return !empty($config['bank']['api_url']) && !empty($config['bank']['api_key']) && !str_contains((string)$config['bank']['api_url'], 'АДРЕС-ВАШЕГО-БАНКА') && !str_contains((string)$config['bank']['api_key'], 'ВСТАВЬТЕ_');
+}
+/** Отправляет штраф в Capital-Standart. Секрет никогда не возвращается в интерфейс и не пишется в журнал. */
+function bank_issue_fine(array $config, array $fine, array $vehicle): array {
+    if (!bank_is_configured($config)) return ['ok'=>false, 'status'=>'not_configured', 'message'=>'Не настроен URL API или API-ключ банка.'];
+    $payload = [
+        'action' => 'issue_fine',
+        'customer_email' => (string)$vehicle['owner_email'],
+        'external_ref' => (string)$fine['external_ref'],
+        'title' => (string)$fine['title'],
+        'amount' => number_format((float)$fine['amount'], 2, '.', ''),
+        'details' => (string)$fine['details'],
+        'vehicle_plate' => (string)$vehicle['plate'],
+        'due_date' => (string)$fine['due_date'],
+    ];
+    $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $url = (string)$config['bank']['api_url'];
+    $timeout = max(3, (int)($config['bank']['timeout'] ?? 12));
+    $httpCode = 0; $responseBody = ''; $transportError = '';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'X-API-Key: ' . $config['bank']['api_key']],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => min(5, $timeout),
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_FOLLOWLOCATION => false,
+        ]);
+        $result = curl_exec($ch);
+        if ($result === false) $transportError = curl_error($ch);
+        else $responseBody = (string)$result;
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create(['http'=>[
+            'method'=>'POST', 'header'=>"Content-Type: application/json\r\nAccept: application/json\r\nX-API-Key: ".$config['bank']['api_key']."\r\n",
+            'content'=>$body, 'timeout'=>$timeout, 'ignore_errors'=>true,
+        ]]);
+        $result = @file_get_contents($url, false, $ctx);
+        if ($result === false) $transportError = 'Не удалось подключиться к API банка.';
+        else $responseBody = (string)$result;
+        foreach (($http_response_header ?? []) as $header) if (preg_match('/^HTTP\/\S+\s+(\d{3})/', $header, $m)) $httpCode = (int)$m[1];
+    }
+    $json = json_decode($responseBody, true);
+    $apiError = is_array($json) ? (string)($json['error'] ?? '') : '';
+    $apiMessage = is_array($json) ? (string)($json['message'] ?? '') : '';
+    $explicitFailure = is_array($json) && (($json['success'] ?? null) === false || in_array(strtolower((string)($json['status'] ?? '')), ['error','failed','failure'], true));
+    $ok = $transportError === '' && $httpCode >= 200 && $httpCode < 300 && !$explicitFailure && $apiError === '';
+    $message = $ok ? 'Штраф передан в банк.' : ($transportError ?: ($apiError ?: ($apiMessage ?: ('Банк вернул HTTP ' . $httpCode . '.'))));
+    return ['ok'=>$ok, 'status'=>$ok ? 'sent' : 'error', 'message'=>mb_substr($message, 0, 500), 'http_code'=>$httpCode, 'response'=>$responseBody];
+}
+function bank_log(PDO $pdo, int $fineId, array $result): void {
+    $stmt = $pdo->prepare('INSERT INTO bank_api_logs (fine_id, outcome, http_code, response_excerpt, created_at) VALUES (?, ?, ?, ?, NOW())');
+    $excerpt = mb_substr((string)($result['response'] ?? $result['message'] ?? ''), 0, 1500);
+    $stmt->execute([$fineId, (string)($result['status'] ?? 'error'), (int)($result['http_code'] ?? 0), $excerpt]);
+}
+function dispatch_fine_to_bank(PDO $pdo, array $config, int $fineId): array {
+    $stmt = $pdo->prepare('SELECT f.*, v.plate, v.owner_email FROM fines f JOIN vehicles v ON v.id=f.vehicle_id WHERE f.id=?');
+    $stmt->execute([$fineId]); $row = $stmt->fetch();
+    if (!$row) return ['ok'=>false,'status'=>'error','message'=>'Штраф не найден.'];
+    $result = bank_issue_fine($config, $row, $row);
+    $upd = $pdo->prepare('UPDATE fines SET bank_status=?, bank_last_error=?, bank_sent_at=IF(?, NOW(), bank_sent_at) WHERE id=?');
+    $upd->execute([$result['status'], $result['ok'] ? null : $result['message'], $result['ok'] ? 1 : 0, $fineId]);
+    bank_log($pdo, $fineId, $result);
+    return $result;
+}
