@@ -1,0 +1,3 @@
+/config.local.php
+/uploads/vehicles/*
+!/uploads/vehicles/.gitkeep

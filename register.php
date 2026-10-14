@@ -1,0 +1,17 @@
+<?php
+require __DIR__ . '/includes/bootstrap.php';
+if (is_logged_in()) redirect('my_account.php');
+$page_title='Создание аккаунта'; $errors=[]; $full_name=''; $email='';
+if ($_SERVER['REQUEST_METHOD']==='POST') {
+    verify_csrf(); $full_name=trim((string)($_POST['full_name']??'')); $email=mb_strtolower(trim((string)($_POST['email']??''))); $password=(string)($_POST['password']??''); $confirm=(string)($_POST['confirm_password']??'');
+    if (mb_strlen($full_name)<3 || mb_strlen($full_name)>120) $errors[]='Укажите имя и фамилию (от 3 до 120 символов).';
+    if (!filter_var($email,FILTER_VALIDATE_EMAIL) || mb_strlen($email)>190) $errors[]='Укажите корректный адрес электронной почты.';
+    if (strlen($password)<10) $errors[]='Пароль должен содержать не менее 10 символов.';
+    if ($password!==$confirm) $errors[]='Пароли не совпадают.';
+    if (!$errors) { $s=$pdo->prepare('SELECT id FROM users WHERE email=?');$s->execute([$email]);if($s->fetch())$errors[]='Аккаунт с таким email уже существует.'; }
+    if (!$errors) { $s=$pdo->prepare("INSERT INTO users(full_name,email,password_hash,role,created_at) VALUES(?,?,?,'user',NOW())");$s->execute([$full_name,$email,password_hash($password,PASSWORD_DEFAULT)]);session_regenerate_id(true);$_SESSION['user']=['id'=>(int)$pdo->lastInsertId(),'full_name'=>$full_name,'email'=>$email,'role'=>'user'];set_flash('success','Аккаунт создан. Добро пожаловать!');redirect('my_account.php'); }
+}
+include __DIR__.'/includes/header.php';
+?>
+<div class="auth-layout"><aside class="auth-aside"><div><span class="eyebrow">АвтоКонтроль · Красноград</span><h2>Ваш автомобиль.<br>Ваша история.<br>Всё под контролем.</h2><p>Создайте кабинет владельца, чтобы смотреть привязанные автомобили, историю регистраций и выставленные начисления.</p></div><div class="mini-stat">🔒 &nbsp; Пароли хранятся в виде стойкого криптографического хеша.</div></aside><section class="auth-form"><h1>Создать аккаунт</h1><p>Регистрация владельца транспортного средства</p><?php foreach($errors as $err): ?><div class="alert alert-danger"><?= e($err) ?></div><?php endforeach; ?><form method="post"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><div class="field"><label for="full_name">Имя и фамилия</label><input id="full_name" name="full_name" value="<?= e($full_name) ?>" autocomplete="name" required maxlength="120" placeholder="Иван Иванов"></div><div class="field"><label for="email">Электронная почта</label><input id="email" type="email" name="email" value="<?= e($email) ?>" autocomplete="email" required maxlength="190" placeholder="name@example.com"><small>Этот адрес используется банком для поиска счёта при выставлении штрафа.</small></div><div class="field"><label for="password">Пароль</label><input id="password" type="password" name="password" autocomplete="new-password" minlength="10" required placeholder="Минимум 10 символов"></div><div class="field"><label for="confirm_password">Повторите пароль</label><input id="confirm_password" type="password" name="confirm_password" autocomplete="new-password" minlength="10" required></div><button class="btn btn-primary" type="submit" style="width:100%;margin-top:3px">Создать аккаунт →</button></form><p style="margin-top:19px;margin-bottom:0">Уже зарегистрированы? <a href="login.php" style="color:#7eb8ff;font-weight:700">Войти</a></p></section></div>
+<?php include __DIR__.'/includes/footer.php'; ?>

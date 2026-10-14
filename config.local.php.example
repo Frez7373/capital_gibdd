@@ -1,0 +1,16 @@
+<?php
+// Скопируйте файл в config.local.php и заполните реквизиты локальной среды.
+// Не публикуйте config.local.php и не помещайте секрет API в JavaScript/HTML.
+return [
+    'db' => [
+        'host' => '127.0.0.1',
+        'name' => 'autocontrol',
+        'user' => 'root',
+        'pass' => '',
+    ],
+    'bank' => [
+        'api_url' => 'http://26.155.57.105:7777/api.php',
+        'api_key' => 'ВСТАВЬТЕ_НОВЫЙ_API_КЛЮЧ_СЮДА',
+        'timeout' => 12,
+    ],
+];
