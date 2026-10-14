@@ -39,6 +39,57 @@ CREATE TABLE IF NOT EXISTS vehicles (
   CONSTRAINT fk_vehicles_registered_by FOREIGN KEY (registered_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS vehicle_sales (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  vehicle_id BIGINT UNSIGNED NOT NULL,
+  seller_user_id BIGINT UNSIGNED NOT NULL,
+  seller_email VARCHAR(190) NOT NULL,
+  price DECIMAL(12,2) NOT NULL,
+  allow_cash TINYINT(1) NOT NULL DEFAULT 1,
+  allow_bank TINYINT(1) NOT NULL DEFAULT 0,
+  seller_account_number VARCHAR(24) NULL,
+  status ENUM('active','processing','sold','withdrawn') NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  sold_at DATETIME NULL,
+  KEY idx_vehicle_sales_vehicle_status (vehicle_id,status),
+  KEY idx_vehicle_sales_seller_status (seller_user_id,status),
+  KEY idx_vehicle_sales_status_created (status,created_at),
+  CONSTRAINT fk_vehicle_sales_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_vehicle_sales_seller FOREIGN KEY (seller_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT chk_vehicle_sales_price CHECK (price > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vehicle_purchases (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  sale_id BIGINT UNSIGNED NOT NULL,
+  vehicle_id BIGINT UNSIGNED NOT NULL,
+  seller_user_id BIGINT UNSIGNED NOT NULL,
+  buyer_user_id BIGINT UNSIGNED NOT NULL,
+  seller_email VARCHAR(190) NOT NULL,
+  buyer_email VARCHAR(190) NOT NULL,
+  payment_method ENUM('cash','bank') NOT NULL,
+  source_account_number VARCHAR(24) NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  bank_external_ref VARCHAR(80) NOT NULL,
+  bank_transaction_reference VARCHAR(40) NULL,
+  status ENUM('pending','processing','payment_failed','completed_cash','completed_bank','declined','cancelled') NOT NULL DEFAULT 'pending',
+  bank_last_error VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  accepted_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  UNIQUE KEY uq_vehicle_purchase_external_ref (bank_external_ref),
+  KEY idx_vehicle_purchases_sale_status (sale_id,status),
+  KEY idx_vehicle_purchases_buyer_status (buyer_user_id,status),
+  KEY idx_vehicle_purchases_seller_status (seller_user_id,status),
+  CONSTRAINT fk_vehicle_purchases_sale FOREIGN KEY (sale_id) REFERENCES vehicle_sales(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_vehicle_purchases_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_vehicle_purchases_seller FOREIGN KEY (seller_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_vehicle_purchases_buyer FOREIGN KEY (buyer_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT chk_vehicle_purchases_amount CHECK (amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS vehicle_photos (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   vehicle_id BIGINT UNSIGNED NOT NULL,

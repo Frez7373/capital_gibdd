@@ -21,7 +21,7 @@ $flash = take_flash();
   </a>
   <nav class="main-nav">
     <a href="index.php" class="<?= basename($_SERVER['PHP_SELF'])==='index.php'?'active':'' ?>">Поиск авто</a>
-    <?php if ($active_user): ?><a href="my_account.php">Мой кабинет</a><?php endif; ?>
+    <?php if ($active_user): ?><a href="my_account.php">Мой кабинет</a><?php if (has_role('user')): ?><a href="marketplace.php" class="<?= basename($_SERVER['PHP_SELF'])==='marketplace.php'?'active':'' ?>">Продажа авто</a><?php endif; ?><?php endif; ?>
     <?php if (has_role(['officer','admin'])): ?><a href="register_vehicle.php">Регистрация ТС</a><a href="issue_fine.php">Оформить штраф</a><?php endif; ?>
     <?php if (has_role(['inspector','officer','admin'])): ?><a href="fines.php">Реестр штрафов</a><?php endif; ?>
     <?php if (has_role('admin')): ?><a href="admin_users.php">Пользователи</a><a href="admin_integration.php">Интеграция API</a><?php endif; ?>
