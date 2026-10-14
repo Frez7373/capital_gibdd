@@ -30,7 +30,7 @@ function marketplace_complete_purchase(PDO $pdo, int $purchaseId, string $comple
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare("SELECT p.*,s.status AS sale_status,s.seller_account_number,
-                                      v.owner_user_id AS current_owner_user_id,v.owner_email AS current_owner_email,
+                                      v.owner_user_id AS current_owner_user_id,v.owner_email AS current_owner_email,v.status AS vehicle_status,
                                       buyer.full_name AS buyer_name
                                FROM vehicle_purchases p
                                JOIN vehicle_sales s ON s.id=p.sale_id
@@ -56,6 +56,7 @@ function marketplace_complete_purchase(PDO $pdo, int $purchaseId, string $comple
         $currentOwnerMatches = (int)$p['current_owner_user_id'] === (int)$p['seller_user_id']
             || strcasecmp((string)$p['current_owner_email'], (string)$p['seller_email']) === 0;
         if (!$currentOwnerMatches) throw new RuntimeException('Владелец автомобиля уже изменился.');
+        if ($p['vehicle_status'] !== 'active') throw new RuntimeException('Автомобиль временно запрещён к передаче.');
 
         $stmt = $pdo->prepare("UPDATE vehicles SET owner_user_id=?,owner_name=?,owner_email=?,updated_at=NOW()
                                WHERE id=? AND (owner_user_id=? OR LOWER(owner_email)=LOWER(?))");
@@ -368,11 +369,11 @@ include __DIR__ . '/includes/header.php';
 <div class="market-card-body"><div class="market-card-heading"><div><h2><?= e($listing['make'].' '.$listing['model']) ?></h2><p class="muted tiny"><?= e($listing['year']) ?> · <?= e($listing['color'] ?: 'Цвет не указан') ?></p></div><strong class="market-price"><?= money($listing['price']) ?></strong></div>
 <div class="market-plate"><span class="license-plate plate-sm"><?= e($listing['plate']) ?></span><span class="muted tiny">Продавец: <?= e($listing['seller_name']) ?></span></div>
 <div class="market-methods"><?php if((int)$listing['allow_cash']): ?><span class="badge badge-green">Наличные</span><?php endif; ?><?php if((int)$listing['allow_bank']): ?><span class="badge badge-blue">Банковский счёт</span><?php endif; ?><a class="btn btn-ghost btn-small" href="vehicle.php?id=<?= (int)$listing['vehicle_id'] ?>">Карточка авто</a></div>
-<?php if($isCustomer && (int)$listing['seller_user_id'] !== (int)$u['id']): ?><form method="post" class="market-buy-form"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="request_purchase"><input type="hidden" name="sale_id" value="<?= (int)$listing['id'] ?>">
+<?php $canBuyCash = (int)$listing['allow_cash'] === 1; $canBuyBank = (int)$listing['allow_bank'] === 1 && $bankAccounts['ok'] && !empty($bankAccounts['accounts']); if($isCustomer && (int)$listing['seller_user_id'] !== (int)$u['id'] && ($canBuyCash || $canBuyBank)): ?><form method="post" class="market-buy-form"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="request_purchase"><input type="hidden" name="sale_id" value="<?= (int)$listing['id'] ?>">
 <div class="field"><label>Способ оплаты</label><select name="payment_method" class="market-payment-method" required><?php if((int)$listing['allow_cash']): ?><option value="cash">Наличными — передать продавцу лично</option><?php endif; ?><?php if((int)$listing['allow_bank'] && $bankAccounts['ok'] && $bankAccounts['accounts']): ?><option value="bank">Со счёта — перевод после принятия</option><?php endif; ?></select></div>
 <div class="field market-source-account" hidden><label>С какого счёта оплатить</label><select name="source_account_number"><option value="">Выберите счёт</option><?php foreach($bankAccounts['accounts'] as $a): ?><option value="<?= e($a['account_number']) ?>"><?= e(($a['name']??'Счёт').' · '.$a['account_number'].' · '.($a['balance']??'').' ₽') ?></option><?php endforeach; ?></select></div>
 <button class="btn btn-primary" type="submit">Отправить заявку →</button></form>
-<?php elseif($isCustomer): ?><p class="muted tiny">Это ваше объявление.</p><?php endif; ?>
+<?php elseif($isCustomer && (int)$listing['seller_user_id'] === (int)$u['id']): ?><p class="muted tiny">Это ваше объявление.</p><?php elseif($isCustomer): ?><p class="muted tiny">Нет доступного способа оплаты: проверьте настройки банковской интеграции или дождитесь наличной оплаты.</p><?php endif; ?>
 </div></article><?php endforeach; ?></div><?php endif; ?>
 
 <section class="panel" style="margin-top:24px"><div class="panel-header"><h2>Мои объявления</h2><p>Статус продажи и управление активными предложениями</p></div><?php if(!$mySales): ?><div class="panel-body"><p class="muted tiny">Вы ещё не выставляли автомобили на продажу.</p></div><?php else: ?><div class="table-wrap"><table class="data-table"><thead><tr><th>Автомобиль</th><th>Цена</th><th>Оплата</th><th>Статус</th><th>Действие</th></tr></thead><tbody><?php foreach($mySales as $sale): ?><tr><td><strong><?= e($sale['make'].' '.$sale['model']) ?></strong><br><span class="muted tiny"><?= e($sale['plate']) ?></span></td><td><?= money($sale['price']) ?></td><td><?= (int)$sale['allow_cash']?'Наличные':'' ?><?= (int)$sale['allow_cash'] && (int)$sale['allow_bank']?' / ':'' ?><?= (int)$sale['allow_bank']?'Банк':'' ?></td><td><?= e(marketplace_status_label($sale['status'])) ?></td><td><?php if($sale['status']==='active'): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="withdraw_listing"><input type="hidden" name="sale_id" value="<?= (int)$sale['id'] ?>"><button class="btn btn-ghost btn-small" type="submit">Снять с продажи</button></form><?php else: ?>—<?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?></section>
