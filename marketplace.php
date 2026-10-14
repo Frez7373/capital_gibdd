@@ -187,17 +187,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($purchase['payment_method'] === 'cash') {
                 if (($_POST['cash_received'] ?? '') !== '1') throw new InvalidArgumentException('Подтвердите, что наличные действительно получены.');
-                $pdo->beginTransaction();
-                try {
-                    $stmt = $pdo->prepare("SELECT p.status,s.status AS sale_status FROM vehicle_purchases p JOIN vehicle_sales s ON s.id=p.sale_id WHERE p.id=? FOR UPDATE");
-                    $stmt->execute([$purchaseId]);
-                    $state = $stmt->fetch();
-                    if (!$state || $state['status'] !== 'pending' || $state['sale_status'] !== 'active') throw new RuntimeException('Заявку уже обработали или объявление недоступно.');
-                    $pdo->commit();
-                } catch (Throwable $e) {
-                    if ($pdo->inTransaction()) $pdo->rollBack();
-                    throw $e;
-                }
+                // The completion function locks both the request and listing in one transaction,
+                // preventing two concurrent acceptances from transferring the same vehicle.
                 marketplace_complete_purchase($pdo, $purchaseId, 'completed_cash');
                 set_flash('success', 'Наличные подтверждены. Автомобиль переоформлен на покупателя.');
                 redirect('marketplace.php');
