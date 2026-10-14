@@ -72,6 +72,8 @@ function marketplace_complete_purchase(PDO $pdo, int $purchaseId, string $comple
             ->execute([(int)$p['sale_id']]);
         $pdo->prepare("UPDATE vehicle_purchases SET status=?,bank_transaction_reference=?,bank_last_error=NULL,accepted_at=COALESCE(accepted_at,NOW()),completed_at=NOW(),updated_at=NOW() WHERE id=?")
             ->execute([$completedStatus, $bankReference, $purchaseId]);
+        $pdo->prepare("UPDATE vehicle_purchases SET status='cancelled',bank_last_error='Объявление уже продано другому покупателю.',updated_at=NOW() WHERE sale_id=? AND id<>? AND status IN ('pending','payment_failed')")
+            ->execute([(int)$p['sale_id'], $purchaseId]);
         $description = $completedStatus === 'completed_cash'
             ? 'Собственник изменён после подтверждения продавцом получения наличных.'
             : 'Собственник изменён после успешного перевода с банковского счёта покупателя.';
@@ -271,10 +273,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'withdraw_listing') {
             $saleId = (int)($_POST['sale_id'] ?? 0);
-            $stmt = $pdo->prepare("UPDATE vehicle_sales SET status='withdrawn',updated_at=NOW() WHERE id=? AND seller_user_id=? AND status='active'");
-            $stmt->execute([$saleId, (int)$u['id']]);
-            if (!$stmt->rowCount()) throw new RuntimeException('Объявление не найдено, уже снято или по нему обрабатывается покупка.');
-            set_flash('success', 'Объявление снято с продажи.');
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare("SELECT id FROM vehicle_sales WHERE id=? AND seller_user_id=? AND status='active' FOR UPDATE");
+                $stmt->execute([$saleId, (int)$u['id']]);
+                if (!$stmt->fetchColumn()) throw new RuntimeException('Объявление не найдено, уже снято или по нему обрабатывается покупка.');
+                $pdo->prepare("UPDATE vehicle_sales SET status='withdrawn',updated_at=NOW() WHERE id=?")->execute([$saleId]);
+                $pdo->prepare("UPDATE vehicle_purchases SET status='cancelled',bank_last_error='Продавец снял объявление с продажи.',updated_at=NOW() WHERE sale_id=? AND status IN ('pending','payment_failed')")
+                    ->execute([$saleId]);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $e;
+            }
+            set_flash('success', 'Объявление снято с продажи, незавершённые заявки отменены.');
             redirect('marketplace.php');
         }
 
