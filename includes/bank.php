@@ -69,3 +69,96 @@ function dispatch_fine_to_bank(PDO $pdo, array $config, int $fineId): array {
     bank_log($pdo, $fineId, $result);
     return $result;
 }
+
+
+/** Calls the bank's authenticated partner API from the server only. */
+function bank_partner_request(array $config, array $payload): array {
+    if (!bank_is_configured($config)) {
+        return ['ok'=>false,'uncertain'=>false,'message'=>'Не настроена интеграция с банком.'];
+    }
+    $url = (string)$config['bank']['api_url'];
+    $timeout = max(3, (int)($config['bank']['timeout'] ?? 12));
+    $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $httpCode = 0;
+    $responseBody = '';
+    $transportError = '';
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'X-API-Key: ' . (string)$config['bank']['api_key'],
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => min(5, $timeout),
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_FOLLOWLOCATION => false,
+        ]);
+        $result = curl_exec($ch);
+        if ($result === false) $transportError = curl_error($ch);
+        else $responseBody = (string)$result;
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create(['http'=>[
+            'method'=>'POST',
+            'header'=>"Content-Type: application/json\r\nAccept: application/json\r\nX-API-Key: " . (string)$config['bank']['api_key'] . "\r\n",
+            'content'=>$body,
+            'timeout'=>$timeout,
+            'ignore_errors'=>true,
+        ]]);
+        $result = @file_get_contents($url, false, $ctx);
+        if ($result === false) $transportError = 'Не удалось подключиться к API банка.';
+        else $responseBody = (string)$result;
+        foreach (($http_response_header ?? []) as $header) {
+            if (preg_match('/^HTTP\/\S+\s+(\d{3})/', $header, $m)) $httpCode = (int)$m[1];
+        }
+    }
+
+    $data = json_decode($responseBody, true);
+    $validJson = is_array($data);
+    $success = $validJson && ($data['success'] ?? null) === true;
+    $ok = $transportError === '' && $httpCode >= 200 && $httpCode < 300 && $success;
+    $message = $ok
+        ? (string)($data['message'] ?? 'Запрос успешно выполнен.')
+        : ($transportError ?: ($validJson
+            ? (string)($data['message'] ?? $data['error'] ?? ('Банк вернул HTTP ' . $httpCode . '.'))
+            : 'Банк вернул некорректный ответ.'));
+    $uncertain = $transportError !== '' || $httpCode === 0 || $httpCode >= 500 || ($httpCode >= 200 && $httpCode < 300 && !$validJson);
+    return [
+        'ok'=>$ok,
+        'uncertain'=>$uncertain,
+        'message'=>mb_substr($message, 0, 500),
+        'http_code'=>$httpCode,
+        'data'=>$validJson ? $data : [],
+    ];
+}
+
+/** Returns active bank accounts for the customer's verified email. */
+function bank_list_accounts(array $config, string $email): array {
+    $result = bank_partner_request($config, [
+        'action'=>'list_accounts',
+        'customer_email'=>$email,
+    ]);
+    if (!$result['ok']) return ['ok'=>false,'message'=>$result['message'],'accounts'=>[]];
+    $accounts = $result['data']['accounts'] ?? null;
+    if (!is_array($accounts)) return ['ok'=>false,'message'=>'Банк не вернул список счетов.','accounts'=>[]];
+    return ['ok'=>true,'message'=>'','accounts'=>$accounts];
+}
+
+/** Initiates an idempotent buyer-to-seller transfer for an accepted vehicle purchase. */
+function bank_vehicle_purchase_transfer(array $config, array $purchase, array $sale): array {
+    return bank_partner_request($config, [
+        'action'=>'vehicle_purchase_transfer',
+        'buyer_email'=>(string)$purchase['buyer_email'],
+        'seller_email'=>(string)$purchase['seller_email'],
+        'source_account_number'=>(string)$purchase['source_account_number'],
+        'destination_account_number'=>(string)$sale['seller_account_number'],
+        'amount'=>number_format((float)$purchase['amount'], 2, '.', ''),
+        'external_ref'=>(string)$purchase['bank_external_ref'],
+    ]);
+}
