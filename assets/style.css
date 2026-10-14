@@ -4,3 +4,24 @@
 @media(max-width:1100px){.app-shell{padding:0 20px}.topbar{gap:12px;flex-wrap:wrap;padding:15px 0}.main-nav{order:3;flex-basis:100%;overflow-x:auto}.top-actions{margin-left:auto}.hero{grid-template-columns:1fr 1fr}.main-nav a{padding:8px 10px}.user-pill-name{display:none}}
 @media(max-width:760px){.app-shell{padding:0 14px}.page-content{padding-top:22px}.topbar{min-height:auto}.brand-mark{width:37px;height:37px}.brand strong{font-size:14px}.main-nav{gap:2px}.main-nav a{font-size:10px;padding:8px}.top-actions{gap:5px}.hero,.split-layout,.detail-grid,.auth-layout{grid-template-columns:1fr}.hero-copy{padding:10px 0 0}.hero-copy h1{font-size:28px}.stats-grid{grid-template-columns:1fr;gap:9px}.stat-card{padding:13px}.feature-grid{grid-template-columns:1fr}.panel-pad,.panel-body{padding:17px}.panel-header{padding:17px}.form-grid{grid-template-columns:1fr}.form-grid .span-2{grid-column:span 1}.vehicle-top{grid-template-columns:1fr;padding:18px}.vehicle-title h1{font-size:22px}.auth-aside{min-height:260px;padding:25px}.auth-form{padding:25px}.footer{flex-direction:column}.section-head{align-items:flex-start;flex-direction:column}.spec-grid{gap:11px}.photo-frame{height:200px}.page-intro h1{font-size:25px}.btn{white-space:normal}}
 @media(max-width:420px){h1{font-size:26px}.top-actions .btn{padding:7px 8px}.brand small{font-size:8px}.license-plate{font-size:17px}.license-plate .region{font-size:11px}}
+
+/* Vehicle marketplace */
+.market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0 26px}
+.market-card{overflow:hidden;min-width:0}
+.market-photo{height:180px;background:linear-gradient(135deg,#1b2c42,#0c1625);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.market-photo img{width:100%;height:100%;object-fit:cover}
+.market-card-body{padding:17px}
+.market-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+.market-card-heading h2{font-size:15px;line-height:1.4}
+.market-price{color:#6ee0c8;white-space:nowrap;font-size:15px}
+.market-plate{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.market-methods{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding-bottom:13px;border-bottom:1px solid #243650}
+.market-buy-form{padding-top:14px}
+.market-buy-form .field{margin-bottom:10px}
+.market-buy-form .btn{width:100%}
+.market-action-form{min-width:160px}
+.market-action-form .check-row{margin-bottom:8px}
+#seller-account-field[hidden],.market-source-account[hidden]{display:none}
+@media(max-width:1050px){.market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.market-grid{grid-template-columns:1fr}.market-photo{height:210px}.market-card-heading{flex-wrap:wrap}.market-price{font-size:14px}}
+
