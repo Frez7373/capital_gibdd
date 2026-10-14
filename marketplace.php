@@ -30,7 +30,7 @@ function marketplace_complete_purchase(PDO $pdo, int $purchaseId, string $comple
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare("SELECT p.*,s.status AS sale_status,s.seller_account_number,
-                                      v.owner_user_id AS current_owner_user_id,v.owner_email AS current_owner_email,v.status AS vehicle_status,
+                                      v.owner_user_id AS current_owner_user_id,v.owner_email AS current_owner_email,
                                       buyer.full_name AS buyer_name
                                FROM vehicle_purchases p
                                JOIN vehicle_sales s ON s.id=p.sale_id
@@ -56,7 +56,6 @@ function marketplace_complete_purchase(PDO $pdo, int $purchaseId, string $comple
         $currentOwnerMatches = (int)$p['current_owner_user_id'] === (int)$p['seller_user_id']
             || strcasecmp((string)$p['current_owner_email'], (string)$p['seller_email']) === 0;
         if (!$currentOwnerMatches) throw new RuntimeException('Владелец автомобиля уже изменился.');
-        if ($p['vehicle_status'] !== 'active') throw new RuntimeException('Автомобиль временно запрещён к передаче.');
 
         $stmt = $pdo->prepare("UPDATE vehicles SET owner_user_id=?,owner_name=?,owner_email=?,updated_at=NOW()
                                WHERE id=? AND (owner_user_id=? OR LOWER(owner_email)=LOWER(?))");
