@@ -121,7 +121,7 @@ function bank_partner_request(array $config, array $payload): array {
 
     $data = json_decode($responseBody, true);
     $validJson = is_array($data);
-    $success = $validJson && ($data['success'] ?? null) === true;
+    $success = $validJson && (($data['success'] ?? null) === true || ($data['ok'] ?? null) === true);
     $ok = $transportError === '' && $httpCode >= 200 && $httpCode < 300 && $success;
     $message = $ok
         ? (string)($data['message'] ?? 'Запрос успешно выполнен.')
@@ -150,15 +150,39 @@ function bank_list_accounts(array $config, string $email): array {
     return ['ok'=>true,'message'=>'','accounts'=>$accounts];
 }
 
-/** Initiates an idempotent buyer-to-seller transfer for an accepted vehicle purchase. */
+/** Initiates an idempotent buyer-to-seller transfer for an accepted vehicle purchase.
+ * Supports both the current transfer contract and older Capital-Standart partner API.
+ */
 function bank_vehicle_purchase_transfer(array $config, array $purchase, array $sale): array {
+    $amount = number_format((float)$purchase['amount'], 2, '.', '');
+    $externalRef = (string)$purchase['bank_external_ref'];
+
+    // Newer bank API: generic transfer action and standard account-number field names.
+    $result = bank_partner_request($config, [
+        'action'=>'transfer',
+        'from_account_number'=>(string)$purchase['source_account_number'],
+        'to_account_number'=>(string)$sale['seller_account_number'],
+        'amount'=>$amount,
+        'external_ref'=>$externalRef,
+        'description'=>'Оплата автомобиля через АвтоКонтроль',
+    ]);
+    if ($result['ok']) return $result;
+
+    // Fallback only when the bank explicitly says this action is unsupported.
+    // Never retry a timeout, validation failure, low balance, or uncertain result as another action.
+    $errorCode = strtolower((string)($result['data']['error'] ?? ''));
+    if (!in_array($errorCode, ['unknown_action', 'unsupported_action', 'action_not_supported'], true)) {
+        return $result;
+    }
+
+    // Legacy Capital-Standart API: preserve compatibility with existing installations.
     return bank_partner_request($config, [
         'action'=>'vehicle_purchase_transfer',
         'buyer_email'=>(string)$purchase['buyer_email'],
         'seller_email'=>(string)$purchase['seller_email'],
         'source_account_number'=>(string)$purchase['source_account_number'],
         'destination_account_number'=>(string)$sale['seller_account_number'],
-        'amount'=>number_format((float)$purchase['amount'], 2, '.', ''),
-        'external_ref'=>(string)$purchase['bank_external_ref'],
+        'amount'=>$amount,
+        'external_ref'=>$externalRef,
     ]);
 }
